@@ -3,12 +3,15 @@ import plotly.express as px
 from db import get_user
 from rates import get_btc_7day_prices, get_btc_price
 from db import update_user_balances
+from exchange import get_wallet_balance
 
 username = st.session_state.get("username")
 if not username:
     st.switch_page("main.py")
 
 user = get_user(username)
+update_user_balances(user["username"], user['pln'], user['usd'], get_wallet_balance(username))
+
 
 st.title(f"👋 Welcome back, {username}!")
 
@@ -27,6 +30,7 @@ if st.button("Logout"):
 st.subheader("📈 Real-time Bitcoin Price")
 
 btc_price = get_btc_price()
+
 df_usd = get_btc_7day_prices("usd")
 df_usd["price"] = df_usd["price"] / 1000
 df_pln = get_btc_7day_prices("pln")
