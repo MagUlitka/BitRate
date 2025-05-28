@@ -3,13 +3,15 @@ import plotly.express as px
 from db import get_user
 from rates import get_btc_7day_prices, get_btc_price
 from db import update_user_balances
-from exchange import get_wallet_balance
+from exchange import get_wallet_balance, get_rpc_connection, wait_for_confirmation
+from transactions import transaction_ui, transation_history
 
 username = st.session_state.get("username")
 if not username:
     st.switch_page("main.py")
 
 user = get_user(username)
+user_wallet = get_rpc_connection(username)
 update_user_balances(user["username"], user['pln'], user['usd'], get_wallet_balance(username))
 
 
@@ -19,9 +21,10 @@ st.subheader("💼 Your Wallet")
 
 st.markdown(f"""
 - **PLN:** {user['pln']} zł  
-- **BTC:** {user['btc']} ₿  
+- **BTC:** {user['btc']:.6f} ₿  
 - **USD:** {user['usd']} $
 """)
+st.text_input("Wallet address (click to copy):", user['btc_wallet'], disabled=True)
 
 if st.button("Logout"):
     st.session_state.clear()
@@ -45,12 +48,18 @@ if btc_price["usd"] and btc_price["pln"]:
 
 st.caption("Prices auto-update when you refresh or rerun the app.")
 
+transaction_ui(user["username"],user_wallet)
+
+transation_history(user_wallet)
+
 st.subheader("Buy Bitcoin")
 
 currency = st.selectbox("Spend which currency?", ["PLN", "USD"])
 amount_to_spend = st.number_input(f"Amount to spend ({currency}):", min_value=0.0, max_value=(user['pln'] if currency=="PLN" else user['usd']), step=1.0)
 
 if st.button("Buy BTC"):
+    master_wallet = get_rpc_connection(wallet="Master")
+    st.caption("Bitcoins available: {bitcoins}", get_wallet_balance("Master"))
     if amount_to_spend <= 0:
         st.error("Enter a positive amount")
     else:
@@ -60,9 +69,23 @@ if st.button("Buy BTC"):
         else:
             btc_bought = amount_to_spend / btc_price["usd"]
             user['usd'] -= amount_to_spend
-        user['btc'] += btc_bought
-        update_user_balances(user["username"], user['pln'], user['usd'], user['btc'])
-        st.success(f"Bought {btc_bought:.6f} BTC for {amount_to_spend:.2f} {currency}")
+        try:
+            user_wallet_address = user['btc_wallet']
+            txid = master_wallet.sendtoaddress(user_wallet_address, btc_bought)
+            if wait_for_confirmation("Master", txid):
+                update_user_balances(
+                    user["username"],
+                    user["pln"],
+                    user["usd"],
+                    float(get_wallet_balance(user["username"]))
+                )
+                st.success("Transaction confirmed and balance updated.")
+            else:
+                st.error("Transaction not confirmed in time.")
+            st.success(f"Sent {btc_bought:.6f} BTC to {user['username']}. TXID: {txid}")
+        except Exception as e:
+            st.error(f"Failed to send BTC: {e}")
+        update_user_balances(user["username"], user['pln'], user['usd'], float(get_wallet_balance(user["username"])))
 
 st.subheader("Sell Bitcoin")
 
