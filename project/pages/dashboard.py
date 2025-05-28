@@ -34,6 +34,7 @@ st.subheader("📈 Real-time Bitcoin Price")
 
 btc_price = get_btc_price()
 
+
 df_usd = get_btc_7day_prices("usd")
 df_usd["price"] = df_usd["price"] / 1000
 df_pln = get_btc_7day_prices("pln")
