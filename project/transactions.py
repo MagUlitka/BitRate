@@ -1,9 +1,9 @@
 import streamlit as st
 from exchange import get_wallet_balance, get_rpc_connection
+from db import get_pending_transactions
 
 def transaction_ui(current_user, rpc):
     st.subheader("Send BTC")
-
     recipient_address = st.text_input("Recipient BTC address")
     amount = st.number_input("Amount (BTC)", min_value=0.000001, format="%.6f")
     fee_rate = get_estimated_fee(rpc)
@@ -36,15 +36,13 @@ def send_btc(from_user, to_address, amount):
     return txid
 
 def transation_history(rpc):
+    #TODO: make it easily readable, no raw json
     st.subheader("Transaction History")
     txs = rpc.listtransactions("*", 10)
     for tx in txs:
         st.write(tx)
 
 def get_estimated_fee(rpc, conf_target=6):
-    """
-    Get estimated fee in BTC/kB for the given confirmation target (in blocks).
-    """
     try:
         fee_estimate = rpc.estimatesmartfee(conf_target)
         if "feerate" in fee_estimate and fee_estimate["feerate"] is not None:
@@ -54,3 +52,14 @@ def get_estimated_fee(rpc, conf_target=6):
     except Exception as e:
         print("Fee estimation error:", e)
         return None
+    
+def pending_exchange_ui(user):
+    #TODO: also show type
+    pending_txs = get_pending_transactions(user["username"])
+    if pending_txs:
+        st.warning("⏳ You have pending BTC exchange transactions waiting for confirmation:")
+        for txid, amount, ts in pending_txs:
+            st.write(f"• {amount:.6f} BTC – TXID: `{txid[:12]}...` (sent at {ts})")
+            st.code(txid, language="text")
+    else:
+        st.success("✅ No pending BTC exchange transactions.")

@@ -2,9 +2,9 @@ import streamlit as st
 import plotly.express as px
 from db import get_user
 from rates import get_btc_7day_prices, get_btc_price
-from db import update_user_balances
-from exchange import get_wallet_balance, get_rpc_connection, wait_for_confirmation
-from transactions import transaction_ui, transation_history
+from db import update_user_balances, save_pending_tx, check_pending_transactions
+from exchange import get_wallet_balance, get_rpc_connection
+from transactions import transaction_ui, transation_history, pending_exchange_ui
 
 username = st.session_state.get("username")
 if not username:
@@ -13,6 +13,7 @@ if not username:
 user = get_user(username)
 user_wallet = get_rpc_connection(username)
 update_user_balances(user["username"], user['pln'], user['usd'], get_wallet_balance(username))
+check_pending_transactions()
 
 
 st.title(f"👋 Welcome back, {username}!")
@@ -55,57 +56,113 @@ transation_history(user_wallet)
 
 st.subheader("Buy Bitcoin")
 
+bitcoins_available = get_wallet_balance("Master")
+st.caption(f"Bitcoins available: {bitcoins_available}")
 currency = st.selectbox("Spend which currency?", ["PLN", "USD"])
-amount_to_spend = st.number_input(f"Amount to spend ({currency}):", min_value=0.0, max_value=(user['pln'] if currency=="PLN" else user['usd']), step=1.0)
+user_fiat_balance = user['pln'] if currency == "PLN" else user['usd']
+btc_price_selected = btc_price[currency.lower()]
+
+max_fiat_by_master_btc = bitcoins_available * btc_price_selected
+final_max_spend = min(user_fiat_balance, max_fiat_by_master_btc)
+
+amount_to_spend = st.number_input(
+    f"Amount to spend ({currency}):",
+    min_value=0.0,
+    max_value=final_max_spend,
+    step=1.0
+)
+
+btc_bought = amount_to_spend / btc_price[currency.lower()] if amount_to_spend > 0 else 0
+st.info(f"You will receive approximately **{btc_bought:.8f} BTC**")
 
 if st.button("Buy BTC"):
     master_wallet = get_rpc_connection(wallet="Master")
-    st.caption("Bitcoins available: {bitcoins}", get_wallet_balance("Master"))
     if amount_to_spend <= 0:
         st.error("Enter a positive amount")
     else:
-        if currency == "PLN":
-            btc_bought = amount_to_spend / btc_price["pln"]
-            user['pln'] -= amount_to_spend
-        else:
-            btc_bought = amount_to_spend / btc_price["usd"]
-            user['usd'] -= amount_to_spend
         try:
             user_wallet_address = user['btc_wallet']
-            txid = master_wallet.sendtoaddress(user_wallet_address, btc_bought)
-            if wait_for_confirmation("Master", txid):
-                update_user_balances(
-                    user["username"],
-                    user["pln"],
-                    user["usd"],
-                    float(get_wallet_balance(user["username"]))
+            txid = master_wallet.sendtoaddress(user_wallet_address,  round(float(btc_bought), 8))
+            if currency == "PLN":
+                save_pending_tx(
+                    txid=txid,
+                    username=user['username'],
+                    amount_btc=btc_bought,
+                    pln=amount_to_spend,
+                    usd=0,
+                    tx_type="buy"
                 )
-                st.success("Transaction confirmed and balance updated.")
-            else:
-                st.error("Transaction not confirmed in time.")
-            st.success(f"Sent {btc_bought:.6f} BTC to {user['username']}. TXID: {txid}")
+            elif currency == "USD":
+                save_pending_tx(
+                    txid=txid,
+                    username=user['username'],
+                    amount_btc=btc_bought,
+                    pln=0,
+                    usd=amount_to_spend,
+                    tx_type="buy"
+                )
+            st.success(f"BTC sent to wallet. TXID: {txid}")
+            st.info("We'll update your balance once the transaction is confirmed.")
         except Exception as e:
             st.error(f"Failed to send BTC: {e}")
-        update_user_balances(user["username"], user['pln'], user['usd'], float(get_wallet_balance(user["username"])))
 
 st.subheader("Sell Bitcoin")
+master_balance = get_user("Master")
+pln_available = master_balance['pln']
+usd_available = master_balance['usd']
+st.caption(f"PLN available: {pln_available}")
+st.caption(f"USD available: {usd_available}")
 
-btc_to_sell = st.number_input("Amount of BTC to sell:", min_value=0.0, max_value=user['btc'], step=0.0001, format="%.6f")
 receive_currency = st.selectbox("Receive currency:", ["PLN", "USD"])
+
+btc_price_selected = btc_price[receive_currency.lower()]
+max_btc_by_master_fiat = (pln_available if receive_currency == "PLN" else usd_available) / btc_price_selected
+max_btc_to_sell = min(user['btc'], max_btc_by_master_fiat)
+
+btc_to_sell = st.number_input(
+    "Amount of BTC to sell:",
+    min_value=0.0,
+    max_value=max_btc_to_sell,
+    step=0.0001,
+    format="%.6f"
+)
+
+received_amount = btc_to_sell * btc_price[receive_currency.lower()] if btc_to_sell > 0 else 0
+st.info(f"You will receive approximately **{received_amount:.2f} {receive_currency}**")
 
 if st.button("Sell BTC"):
     if btc_to_sell <= 0:
         st.error("Enter a positive BTC amount")
     else:
-        if receive_currency == "PLN":
-            received_amount = btc_to_sell * btc_price["pln"]
-            user['pln'] += received_amount
-        else:
-            received_amount = btc_to_sell * btc_price["usd"]
-            user['usd'] += received_amount
-        user['btc'] -= btc_to_sell
-        update_user_balances(user["username"], user['pln'], user['usd'], user['btc'])
-        st.success(f"Sold {btc_to_sell:.6f} BTC for {received_amount:.2f} {receive_currency}")
+        try:
+            user_wallet = get_rpc_connection(wallet=user["username"])
+            master_wallet_address = master_balance['btc_wallet']
+            txid = user_wallet.sendtoaddress(master_wallet_address, round(float(btc_to_sell), 8))
+            if receive_currency == "PLN":
+                save_pending_tx(
+                    txid=txid,
+                    username=user['username'],
+                    amount_btc=btc_to_sell,
+                    pln=received_amount,
+                    usd=0,
+                    tx_type="sell"
+                )
+            elif receive_currency == "USD":
+                save_pending_tx(
+                    txid=txid,
+                    username=user['username'],
+                    amount_btc=btc_to_sell,
+                    pln=0,
+                    usd=received_amount,
+                    tx_type="sell"
+                )
+            st.success(f"BTC sold. TXID: {txid}")
+            st.info("We'll update your fiat balance once the transaction is confirmed.")
+        except Exception as e:
+            st.error(f"Failed to send BTC: {e}")
+
+st.subheader("Pending exchange")
+pending_exchange_ui(user)
 
 st.subheader("📊 BTC Value in the Last Year")
 

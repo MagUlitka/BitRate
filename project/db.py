@@ -1,12 +1,11 @@
 import sqlite3
-from exchange import create_wallet_for_user
+from exchange import create_wallet_for_user, get_rpc_connection, get_wallet_balance
 
 DB_FILE = "data/users.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # c.execute("""DROP TABLE users;""")
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -15,6 +14,16 @@ def init_db():
             btc REAL DEFAULT 0.0,
             usd REAL DEFAULT 150.0,
             btc_wallet TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pending_tx (
+            txid TEXT PRIMARY KEY,
+            username TEXT,
+            amount_btc REAL,
+            pln REAL,
+            usd REAL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
@@ -70,3 +79,54 @@ def update_user_balances(username, pln, usd, btc):
     """, (pln, usd, btc, username))
     conn.commit()
     conn.close()
+
+def save_pending_tx(txid, username, amount_btc, pln, usd, tx_type):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        INSERT OR REPLACE INTO pending_tx (txid, username, amount_btc, pln, usd, tx_type)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (txid, username, amount_btc, pln, usd, tx_type))
+    conn.commit()
+    conn.close()
+
+def check_pending_transactions():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT txid, username, amount_btc, pln, usd, tx_type FROM pending_tx")
+    rows = c.fetchall()
+
+    for txid, username, amount_btc, pln, usd, tx_type in rows:
+        wallet = get_rpc_connection(wallet="Master")
+        try:
+            tx = wallet.gettransaction(txid)
+            confirmations = tx.get("confirmations", 0)
+
+            if confirmations >= 1:
+                user_data = get_user(username)
+                master_data = get_user("Master")
+
+                if tx_type == "buy":
+                    update_user_balances(username, user_data['pln'] - pln, user_data['usd'] - usd, float(get_wallet_balance(username)))
+                    update_user_balances("Master", master_data['pln'] + pln, master_data['usd'] + usd, float(get_wallet_balance("Master")))
+
+                elif tx_type == "sell":
+                    update_user_balances(username, user_data['pln'] + pln, user_data['usd'] + usd, float(get_wallet_balance(username)))
+                    update_user_balances("Master", master_data['pln'] - pln, master_data['usd'] - usd, float(get_wallet_balance("Master")))
+
+                c.execute("DELETE FROM pending_tx WHERE txid = ?", (txid,))
+                print(f"Transaction {txid} ({tx_type}) confirmed and processed.")
+
+        except Exception as e:
+            print(f"Error checking tx {txid}: {e}")
+
+    conn.commit()
+    conn.close()
+
+def get_pending_transactions(username):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT txid, amount_btc, timestamp FROM pending_tx WHERE username = ?", (username,))
+    txs = c.fetchall()
+    conn.close()
+    return txs

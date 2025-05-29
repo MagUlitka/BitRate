@@ -1,5 +1,4 @@
 from bitcoinrpc.authproxy import AuthServiceProxy
-import time
 
 RPC_USER = ""
 RPC_PASSWORD = ""
@@ -38,19 +37,3 @@ def create_wallet_for_user(username):
 def get_wallet_balance(username):
     wallet = get_rpc_connection(wallet=username)
     return float(wallet.getbalance())
-
-def wait_for_confirmation(wallet_name, txid, timeout=120):
-    wallet = get_rpc_connection(wallet=wallet_name)
-    start = time.time()
-    
-    while time.time() - start < timeout:
-        tx = wallet.gettransaction(txid)
-        confirmations = tx.get("confirmations", 0)
-        if confirmations >= 1:
-            print(f"Transaction {txid} confirmed with {confirmations} confirmations.")
-            return True
-        print(f"Waiting for confirmation... ({confirmations})")
-        time.sleep(10)
-    
-    print(f"Timeout: Transaction {txid} not confirmed within {timeout} seconds.")
-    return False
