@@ -19,7 +19,7 @@ def create_wallet_for_user(username):
 # blank = False
 # passphrase = ""
 # avoid_reuse = False
-# descriptors = False
+# descriptors = True
 # load_on_startup = True
         rpc.createwallet(username, False, False, "", False, True, True)
     except Exception as e:

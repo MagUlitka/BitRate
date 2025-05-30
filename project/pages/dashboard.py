@@ -6,6 +6,17 @@ from db import update_user_balances, save_pending_tx, check_pending_transactions
 from exchange import get_wallet_balance, get_rpc_connection
 from transactions import transaction_ui, transation_history, pending_exchange_ui
 
+st.markdown("""
+    <style>
+        .main .block-container {
+            max-width: 95%;
+            padding-left: 2rem;
+            padding-right: 2rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
 username = st.session_state.get("username")
 if not username:
     st.switch_page("main.py")
@@ -21,9 +32,9 @@ st.title(f"👋 Welcome back, {username}!")
 st.subheader("💼 Your Wallet")
 
 st.markdown(f"""
-- **PLN:** {user['pln']} zł  
+- **PLN:** {user['pln']:.2f} zł  
 - **BTC:** {user['btc']:.6f} ₿  
-- **USD:** {user['usd']} $
+- **USD:** {user['usd']:.2f} $
 """)
 st.text_input("Wallet address (click to copy):", user['btc_wallet'], disabled=True)
 
@@ -110,8 +121,8 @@ st.subheader("Sell Bitcoin")
 master_balance = get_user("Master")
 pln_available = master_balance['pln']
 usd_available = master_balance['usd']
-st.caption(f"PLN available: {pln_available}")
-st.caption(f"USD available: {usd_available}")
+st.caption(f"PLN available: {pln_available:.2f}")
+st.caption(f"USD available: {usd_available:.2f}")
 
 receive_currency = st.selectbox("Receive currency:", ["PLN", "USD"])
 

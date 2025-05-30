@@ -1,6 +1,8 @@
+from datetime import datetime
 import streamlit as st
 from exchange import get_wallet_balance, get_rpc_connection
 from db import get_pending_transactions
+import pandas as pd
 
 def transaction_ui(current_user, rpc):
     st.subheader("Send BTC")
@@ -35,12 +37,30 @@ def send_btc(from_user, to_address, amount):
     txid = rpc.sendtoaddress(to_address, amount)
     return txid
 
+def format_time(ts):
+    if not ts:
+        return "—"
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
 def transation_history(rpc):
-    #TODO: make it easily readable, no raw json
-    st.subheader("Transaction History")
+    st.subheader("📜 Transaction History")
     txs = rpc.listtransactions("*", 10)
+    tx_data = []
     for tx in txs:
-        st.write(tx)
+        tx_data.append({
+            "TXID": tx.get("txid", "—"),
+            "Address": tx.get("address", "—"),
+            "Amount (BTC)": float(tx.get("amount", 0.0)),
+            "Fee (BTC)": abs(round(tx.get("fee", 0.0), 8)) if "fee" in tx else 0.0,
+            "Unspent Output Index": tx.get("vout", "—"),
+            "Status": "✅ Confirmed" if tx.get("confirmations", 0) >= 1 else "🕒 Unconfirmed",
+            "Sent": format_time(tx.get("time")),
+            "Confirmed": format_time(tx.get("blocktime")) if tx.get("blocktime") else "—"
+        })
+
+
+    df = pd.DataFrame(tx_data)
+    st.dataframe(df, use_container_width=True, hide_index=True, column_config=None)
 
 def get_estimated_fee(rpc, conf_target=6):
     try:
