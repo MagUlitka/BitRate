@@ -11,7 +11,7 @@ def get_rpc_connection(wallet=None):
         url += f"wallet/{wallet}"
     return AuthServiceProxy(url)
 
-def create_wallet_for_user(username):
+def create_wallet_for_user(username, password):
     rpc = get_rpc_connection()
     try:
 #wallet_name = username
@@ -21,7 +21,10 @@ def create_wallet_for_user(username):
 # avoid_reuse = False
 # descriptors = True
 # load_on_startup = True
-        rpc.createwallet(username, False, False, "", False, True, True)
+        if password is not None:
+            rpc.createwallet(username, False, False, f"{password}", False, True, True)
+        else:
+            rpc.createwallet(username, False, False, "", False, True, True)
     except Exception as e:
         if "already exists" in str(e):
             print(f"Wallet already exists for {username}")
@@ -30,8 +33,6 @@ def create_wallet_for_user(username):
 
     user_wallet = get_rpc_connection(wallet=username)
     address = user_wallet.getnewaddress(username)
-    addresses = user_wallet.getaddressesbylabel(username)
-    print(addresses)
     return address
 
 def get_wallet_balance(username):

@@ -1,21 +1,12 @@
 import streamlit as st
 import plotly.express as px
 from db import get_user
-from rates import get_btc_7day_prices, get_btc_price
+from rates import get_btc_365day_prices, get_btc_price
 from db import update_user_balances, save_pending_tx, check_pending_transactions
 from exchange import get_wallet_balance, get_rpc_connection
 from transactions import transaction_ui, transation_history, pending_exchange_ui
 
-st.markdown("""
-    <style>
-        .main .block-container {
-            max-width: 95%;
-            padding-left: 2rem;
-            padding-right: 2rem;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
+st.set_page_config(page_title="BitRate Exchange", layout="wide", initial_sidebar_state="collapsed")
 
 username = st.session_state.get("username")
 if not username:
@@ -23,6 +14,8 @@ if not username:
 
 user = get_user(username)
 user_wallet = get_rpc_connection(username)
+wallet_info = user_wallet.getwalletinfo()
+unlocked_until = wallet_info.get("unlocked_until")
 update_user_balances(user["username"], user['pln'], user['usd'], get_wallet_balance(username))
 check_pending_transactions()
 
@@ -36,20 +29,35 @@ st.markdown(f"""
 - **BTC:** {user['btc']:.6f} ₿  
 - **USD:** {user['usd']:.2f} $
 """)
+
 st.text_input("Wallet address (click to copy):", user['btc_wallet'], disabled=True)
 
 if st.button("Logout"):
     st.session_state.clear()
     st.switch_page("main.py")
 
+st.subheader("Wallet encryption")
+
+if unlocked_until is not None:
+    st.markdown("Your wallet is encrypted. You can change your passphrase here.")
+    old_passphrase = st.text_input("Enter your old passphrase:", type="password")
+else:
+    st.markdown("Your wallet is not encrypted. You can set a passphrase here.")
+new_passphrase = st.text_input("Set passphrase for your wallet:", type="password")
+
+if st.button("Encrypt your wallet"):
+    if unlocked_until is None:
+        user_wallet.encryptwallet(new_passphrase)
+    else:
+        user_wallet.walletpassphrasechange(old_passphrase,new_passphrase)
+
 st.subheader("📈 Real-time Bitcoin Price")
 
 btc_price = get_btc_price()
 
-
-df_usd = get_btc_7day_prices("usd")
+df_usd = get_btc_365day_prices("usd")
 df_usd["price"] = df_usd["price"] / 1000
-df_pln = get_btc_7day_prices("pln")
+df_pln = get_btc_365day_prices("pln")
 df_pln["price"] = df_pln["price"] / 1000
 
 df_long = df_usd.reset_index().melt(id_vars=["Time"], var_name="Currency", value_name="Price")
@@ -61,8 +69,10 @@ if btc_price["usd"] and btc_price["pln"]:
 
 st.caption("Prices auto-update when you refresh or rerun the app.")
 
+st.subheader("Send BTC")
 transaction_ui(user["username"],user_wallet)
 
+st.subheader("📜 Transaction History")
 transation_history(user_wallet)
 
 st.subheader("Buy Bitcoin")
@@ -117,7 +127,8 @@ if st.button("Buy BTC"):
         except Exception as e:
             st.error(f"Failed to send BTC: {e}")
 
-st.subheader("Sell Bitcoin")
+st.subheader("Sell BTC")
+
 master_balance = get_user("Master")
 pln_available = master_balance['pln']
 usd_available = master_balance['usd']
@@ -141,6 +152,9 @@ btc_to_sell = st.number_input(
 received_amount = btc_to_sell * btc_price[receive_currency.lower()] if btc_to_sell > 0 else 0
 st.info(f"You will receive approximately **{received_amount:.2f} {receive_currency}**")
 
+if unlocked_until is not None:
+    sell_passphrase = st.text_input("Enter wallet passphrase:", type="password")
+
 if st.button("Sell BTC"):
     if btc_to_sell <= 0:
         st.error("Enter a positive BTC amount")
@@ -148,6 +162,8 @@ if st.button("Sell BTC"):
         try:
             user_wallet = get_rpc_connection(wallet=user["username"])
             master_wallet_address = master_balance['btc_wallet']
+            if sell_passphrase is not None:
+                user_wallet.walletpassphrase(sell_passphrase, 15)
             txid = user_wallet.sendtoaddress(master_wallet_address, round(float(btc_to_sell), 8))
             if receive_currency == "PLN":
                 save_pending_tx(
@@ -169,6 +185,8 @@ if st.button("Sell BTC"):
                 )
             st.success(f"BTC sold. TXID: {txid}")
             st.info("We'll update your fiat balance once the transaction is confirmed.")
+            if sell_passphrase is not None:
+                user_wallet.walletlock()
         except Exception as e:
             st.error(f"Failed to send BTC: {e}")
 

@@ -5,7 +5,8 @@ from db import get_pending_transactions
 import pandas as pd
 
 def transaction_ui(current_user, rpc):
-    st.subheader("Send BTC")
+    wallet_info = rpc.getwalletinfo()
+    unlocked_until = wallet_info.get("unlocked_until")
     recipient_address = st.text_input("Recipient BTC address")
     amount = st.number_input("Amount (BTC)", min_value=0.000001, format="%.6f")
     fee_rate = get_estimated_fee(rpc)
@@ -14,10 +15,12 @@ def transaction_ui(current_user, rpc):
         st.markdown(f"**Estimated fee:** `{fee_rate:.8f} BTC/kB` (target: 6 blocks)")
     else:
         st.markdown(f"**Estimated fee not available. Using fallback:** `{fallback_fee:.8f} BTC/kB`")
-    note = st.text_input("Note (optional)")
-
+    if unlocked_until is not None:
+        passphrase = st.text_input("Enter your wallet passphrase:", type="password")
     if st.button("Send BTC"):
         try:
+            if passphrase is not None:
+                rpc.walletpassphrase(passphrase, 10)
             balance = get_wallet_balance(current_user)
             if amount > balance:
                 st.error("Insufficient balance")
@@ -27,8 +30,10 @@ def transaction_ui(current_user, rpc):
                     txid = send_btc(current_user, recipient_address, amount)
                     st.success(f"Sent {amount:.6f} BTC to {recipient_address}")
                     st.write(f"Transaction ID: `{txid}`")
+                    if passphrase is not None:
+                        rpc.walletlock()
                 else:
-                    st.error(f"Wallet with this address doens't exist.")
+                    st.error(f"Wallet with this address doesn't exist.")
         except Exception as e:
             st.error(f"Failed to send BTC: {e}")
 
@@ -43,7 +48,6 @@ def format_time(ts):
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 def transation_history(rpc):
-    st.subheader("📜 Transaction History")
     txs = rpc.listtransactions("*", 10)
     tx_data = []
     for tx in txs:
@@ -69,17 +73,15 @@ def get_estimated_fee(rpc, conf_target=6):
             return fee_estimate["feerate"]
         else:
             return None
-    except Exception as e:
-        print("Fee estimation error:", e)
+    except Exception:
         return None
     
 def pending_exchange_ui(user):
-    #TODO: also show type
     pending_txs = get_pending_transactions(user["username"])
     if pending_txs:
         st.warning("⏳ You have pending BTC exchange transactions waiting for confirmation:")
-        for txid, amount, ts in pending_txs:
-            st.write(f"• {amount:.6f} BTC – TXID: `{txid[:12]}...` (sent at {ts})")
+        for txid, amount, ts, tx_type in pending_txs:
+            st.write(f"• {amount:.6f} BTC – TXID: `{txid[:12]}...` Type: {tx_type} (sent at {ts})")
             st.code(txid, language="text")
     else:
         st.success("✅ No pending BTC exchange transactions.")

@@ -29,12 +29,11 @@ def init_db():
     conn.commit()
     conn.close()
 
-def create_user(username):
-    btc_address = create_wallet_for_user(username)
+def create_user(username, password):
+    btc_address = create_wallet_for_user(username, password)
     if not btc_address:
-        print("Failed to create wallet, user not inserted.")
+        print("Failed to create wallet.")
         return
-
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     try:
@@ -49,7 +48,7 @@ def user_exists(username):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT 1 FROM users WHERE username = ?", (username,))
-    exists = c.fetchone() is not None
+    exists = bool(c.fetchone())
     conn.close()
     return exists
 
@@ -126,7 +125,7 @@ def check_pending_transactions():
 def get_pending_transactions(username):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT txid, amount_btc, timestamp FROM pending_tx WHERE username = ?", (username,))
+    c.execute("SELECT txid, amount_btc, timestamp, tx_type FROM pending_tx WHERE username = ?", (username,))
     txs = c.fetchall()
     conn.close()
     return txs
