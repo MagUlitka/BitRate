@@ -13,6 +13,7 @@ if username:
 st.header("🔐 Create Account")
 with st.form("account_creation_form"):
     username = st.text_input("Enter your desired username:")
+    password = st.text_input("Enter passphrase for your wallet (optional) - not used for login, only for enabling transactions:", type="password")
     submitted = st.form_submit_button("Create Account")
 
     if submitted:
@@ -22,7 +23,7 @@ with st.form("account_creation_form"):
             if get_user(username):
                 st.error("Username already taken. Try another one.")
             else:
-                create_user(username)
+                create_user(username, password)
                 st.success(f"Account '{username}' created!")
                 st.session_state.username = username
                 st.switch_page("pages/dashboard.py")

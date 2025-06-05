@@ -24,7 +24,7 @@ def get_btc_price():
         }
 
 @st.cache_data(ttl=600)
-def get_btc_7day_prices(vs_currency="usd"):
+def get_btc_365day_prices(vs_currency="usd"):
     url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
     params = {
         "vs_currency": vs_currency,
