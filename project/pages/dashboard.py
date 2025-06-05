@@ -20,7 +20,7 @@ update_user_balances(user["username"], user['pln'], user['usd'], get_wallet_bala
 check_pending_transactions()
 
 
-st.title(f"👋 Welcome back, {username}!")
+st.title(f"Welcome back, {username}!")
 
 st.subheader("💼 Your Wallet")
 

@@ -6,7 +6,8 @@ DB_FILE = "data/users.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("""
+    try:
+        c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
@@ -16,7 +17,7 @@ def init_db():
             btc_wallet TEXT
         )
     """)
-    c.execute("""
+        c.execute("""
         CREATE TABLE IF NOT EXISTS pending_tx (
             txid TEXT PRIMARY KEY,
             username TEXT,
@@ -26,8 +27,11 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except:
+        conn.rollback()
+    finally:
+        conn.close()
 
 def create_user(username, password):
     btc_address = create_wallet_for_user(username, password)
@@ -41,6 +45,7 @@ def create_user(username, password):
         conn.commit()
     except sqlite3.IntegrityError:
         print("User already exists.")
+        conn.rollback()
     finally:
         conn.close()
 
@@ -72,22 +77,30 @@ def get_user(username):
 def update_user_balances(username, pln, usd, btc):
     conn = sqlite3.connect(DB_FILE) 
     c = conn.cursor()
-    c.execute("""
+    try:
+        c.execute("""
         UPDATE users SET pln = ?, usd = ?, btc = ?
         WHERE username = ?
     """, (pln, usd, btc, username))
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except:
+        conn.rollback()
+    finally:
+        conn.close()
 
 def save_pending_tx(txid, username, amount_btc, pln, usd, tx_type):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("""
-        INSERT OR REPLACE INTO pending_tx (txid, username, amount_btc, pln, usd, tx_type)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (txid, username, amount_btc, pln, usd, tx_type))
-    conn.commit()
-    conn.close()
+    try:
+        c.execute("""
+            INSERT OR REPLACE INTO pending_tx (txid, username, amount_btc, pln, usd, tx_type)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (txid, username, amount_btc, pln, usd, tx_type))
+        conn.commit()
+    except:
+        conn.rollback()
+    finally:
+        conn.close()
 
 def check_pending_transactions():
     conn = sqlite3.connect(DB_FILE)
@@ -115,12 +128,12 @@ def check_pending_transactions():
 
                 c.execute("DELETE FROM pending_tx WHERE txid = ?", (txid,))
                 print(f"Transaction {txid} ({tx_type}) confirmed and processed.")
-
+                conn.commit()
         except Exception as e:
             print(f"Error checking tx {txid}: {e}")
-
-    conn.commit()
-    conn.close()
+            conn.rollback()
+        finally:
+            conn.close()
 
 def get_pending_transactions(username):
     conn = sqlite3.connect(DB_FILE)
